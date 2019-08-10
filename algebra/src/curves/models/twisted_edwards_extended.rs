@@ -265,6 +265,11 @@ mod group_impl {
             *self = tmp;
             self
         }
+
+        fn mul_by_cofactor(&self) -> Self {
+            println!("mul by cofactor twisted");
+            <Self as AffineCurve>::mul_by_cofactor(self)
+        }
     }
 }
 

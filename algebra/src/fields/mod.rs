@@ -311,6 +311,36 @@ impl<E: AsRef<[u64]>> Iterator for BitIterator<E> {
     }
 }
 
+#[derive(Debug)]
+pub struct BitIterator8<E> {
+    t: E,
+    n: usize,
+}
+
+impl<E: AsRef<[u8]>> BitIterator8<E> {
+    pub fn new(t: E) -> Self {
+        let n = t.as_ref().len() * 8;
+
+        BitIterator8 { t, n }
+    }
+}
+
+impl<E: AsRef<[u8]>> Iterator for BitIterator8<E> {
+    type Item = bool;
+
+    fn next(&mut self) -> Option<bool> {
+        if self.n == 0 {
+            None
+        } else {
+            self.n -= 1;
+            let part = self.n / 8;
+            let bit = self.n - (8 * part);
+
+            Some(self.t.as_ref()[part] & (1 << bit) > 0)
+        }
+    }
+}
+
 use crate::biginteger::{
     BigInteger256, BigInteger320, BigInteger384, BigInteger768, BigInteger832,
 };

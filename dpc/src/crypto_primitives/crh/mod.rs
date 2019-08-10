@@ -22,6 +22,7 @@ mod test {
         pedersen::{PedersenCRH, PedersenWindow},
         FixedLengthCRH,
     };
+    use crate::Error;
     use algebra::{
         bytes::ToBytes,
         curves::jubjub::JubJubAffine as JubJub,
@@ -30,10 +31,10 @@ mod test {
     };
     use rand::thread_rng;
 
-    fn crh_test<C: FixedLengthCRH>(input: &[u8]) {
+    fn crh_test<C: FixedLengthCRH>(input: &[u8]) -> Result<C::Output, Error> {
         let rng = &mut thread_rng();
         let parameters = C::setup::<_>(rng).unwrap();
-        let _hash = C::evaluate(&parameters, input).unwrap();
+        C::evaluate(&parameters, input)
     }
 
     #[ignore]
@@ -51,7 +52,40 @@ mod test {
 
         println!("{}", input.len());
 
-        crh_test::<PedersenCRH<JubJub, Window>>(&input);
+        crh_test::<PedersenCRH<JubJub, Window>>(&input).unwrap();
+    }
+
+    #[test]
+    fn test_pedersen_crh_fixed() {
+        use algebra::{
+            biginteger::BigInteger,
+            curves::{jubjub::JubJubProjective as JubJub, ProjectiveCurve},
+            fields::PrimeField,
+        };
+
+        let input = b"some bytes";
+
+        #[derive(Clone)]
+        pub(super) struct Window;
+
+        impl PedersenWindow for Window {
+            const WINDOW_SIZE: usize = 4;
+            const NUM_WINDOWS: usize = 64;
+        }
+
+        let hash = crh_test::<PedersenCRH<JubJub, Window>>(&input[..]).unwrap();
+        let mut hash_bytes = Vec::new();
+        hash.into_affine()
+            .x
+            .into_repr()
+            .write_le(&mut hash_bytes)
+            .expect("failed to write result hash");
+        let expected = vec![
+            237, 70, 41, 231, 39, 180, 131, 120, 36, 36, 119, 199, 200, 225, 153, 242, 106, 116,
+            70, 9, 12, 249, 169, 84, 105, 38, 225, 115, 165, 188, 98, 25,
+        ];
+
+        assert_eq!(hash_bytes, expected);
     }
 
     #[test]

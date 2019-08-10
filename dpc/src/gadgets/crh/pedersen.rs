@@ -65,10 +65,12 @@ where
             .flat_map(|byte| byte.into_bits_le())
             .collect();
         let input_in_bits = input_in_bits.chunks(W::WINDOW_SIZE);
-        let result =
-            GG::precomputed_base_multiscalar_mul(cs, &parameters.params.generators, input_in_bits)?;
+        unimplemented!()
+        // let result =
+        //     GG::precomputed_base_multiscalar_mul(cs, &parameters.params.generators,
+        // input_in_bits)?;
 
-        Ok(result)
+        // Ok(result)
     }
 
     fn cost() -> usize {
