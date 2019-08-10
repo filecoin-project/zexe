@@ -14,8 +14,9 @@ use crate::crypto_primitives::crh::{
 
 #[derive(Clone)]
 pub struct PedersenParameters<G: Group> {
-    pub randomness_generator: Vec<G>,
-    pub generators:           Vec<Vec<G>>,
+    // pub randomness_generator: Vec<G>,
+    pub generators: Vec<G>,
+    pub exp_table:  Vec<Vec<Vec<G>>>,
 }
 
 pub struct PedersenCommitment<G: Group, W: PedersenWindow> {
@@ -51,7 +52,7 @@ impl<G: Group, W: PedersenWindow> CommitmentScheme for PedersenCommitment<G, W> 
     type Randomness = PedersenRandomness<G>;
     type Output = G;
 
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self::Parameters, Error> {
+    fn setup<R: Rng>(_rng: &mut R) -> Result<Self::Parameters, Error> {
         let time = timer_start!(|| format!(
             "PedersenCOMM::Setup: {} {}-bit windows; {{0,1}}^{{{}}} -> G",
             W::NUM_WINDOWS,
@@ -59,13 +60,16 @@ impl<G: Group, W: PedersenWindow> CommitmentScheme for PedersenCommitment<G, W> 
             W::NUM_WINDOWS * W::WINDOW_SIZE
         ));
         let num_powers = <G::ScalarField as PrimeField>::Params::MODULUS_BITS as usize;
-        let randomness_generator = PedersenCRH::<_, W>::generator_powers(num_powers, rng);
-        let generators = PedersenCRH::<_, W>::create_generators(rng);
+        // let randomness_generator = PedersenCRH::<_, W>::generator_powers(num_powers,
+        // rng);
+        let generators = PedersenCRH::<_, W>::create_generators();
+        let exp_table = PedersenCRH::<_, W>::create_exp_table(&generators);
         timer_end!(time);
 
         Ok(Self::Parameters {
-            randomness_generator,
+            // randomness_generator,
             generators,
+            exp_table,
         })
     }
 
@@ -90,27 +94,28 @@ impl<G: Group, W: PedersenWindow> CommitmentScheme for PedersenCommitment<G, W> 
             }
             input = padded_input.as_slice();
         }
-        assert_eq!(parameters.generators.len(), W::NUM_WINDOWS);
+        // assert_eq!(parameters.generators.len(), W::NUM_WINDOWS);
 
         // Invoke Pedersen CRH here, to prevent code duplication.
 
         let crh_parameters = PedersenCRHParameters {
             generators: parameters.generators.clone(),
+            exp_table:  parameters.exp_table.clone(),
         };
-        let mut result = PedersenCRH::<_, W>::evaluate(&crh_parameters, &input)?;
+        let result = PedersenCRH::<_, W>::evaluate(&crh_parameters, &input)?;
         let randomize_time = timer_start!(|| "Randomize");
 
         // Compute h^r.
         let mut scalar_bits = BitIterator::new(randomness.0.into_repr()).collect::<Vec<_>>();
         scalar_bits.reverse();
-        for (bit, power) in scalar_bits
-            .into_iter()
-            .zip(&parameters.randomness_generator)
-        {
-            if bit {
-                result += power
-            }
-        }
+        // for (bit, power) in scalar_bits
+        //     .into_iter()
+        //     .zip(&parameters.randomness_generator)
+        // {
+        //     if bit {
+        //         result += power
+        //     }
+        // }
         timer_end!(randomize_time);
         timer_end!(commit_time);
 

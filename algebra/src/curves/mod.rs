@@ -283,4 +283,9 @@ impl<C: ProjectiveCurve> Group for C {
     fn double_in_place(&mut self) -> &mut Self {
         <C as ProjectiveCurve>::double_in_place(self)
     }
+
+    fn mul_by_cofactor(&self) -> Self {
+        println!("mul by cofactor generic");
+        self.clone()
+    }
 }

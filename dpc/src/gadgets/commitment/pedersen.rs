@@ -41,7 +41,7 @@ where
     type RandomnessGadget = PedersenRandomnessGadget;
 
     fn check_commitment_gadget<CS: ConstraintSystem<E>>(
-        mut cs: CS,
+        cs: CS,
         parameters: &Self::ParametersGadget,
         input: &[UInt8],
         r: &Self::RandomnessGadget,
@@ -66,22 +66,23 @@ where
             .flat_map(|byte| byte.into_bits_le())
             .collect();
         let input_in_bits = input_in_bits.chunks(W::WINDOW_SIZE);
-        let mut result = GG::precomputed_base_multiscalar_mul(
-            cs.ns(|| "multiexp"),
-            &parameters.params.generators,
-            input_in_bits,
-        )?;
+        unimplemented!()
+        // let mut result = GG::precomputed_base_multiscalar_mul(
+        //     cs.ns(|| "multiexp"),
+        //     &parameters.params.generators,
+        //     input_in_bits,
+        // )?;
 
-        // Compute h^r
-        let rand_bits: Vec<_> = r.0.iter().flat_map(|byte| byte.into_bits_le()).collect();
-        result.precomputed_base_scalar_mul(
-            cs.ns(|| "Randomizer"),
-            rand_bits
-                .iter()
-                .zip(&parameters.params.randomness_generator),
-        )?;
+        // // Compute h^r
+        // let rand_bits: Vec<_> = r.0.iter().flat_map(|byte|
+        // byte.into_bits_le()).collect(); result.precomputed_base_scalar_mul(
+        //     cs.ns(|| "Randomizer"),
+        //     rand_bits
+        //         .iter()
+        //         .zip(&parameters.params.randomness_generator),
+        // )?;
 
-        Ok(result)
+        // Ok(result)
     }
 }
 

@@ -66,4 +66,6 @@ pub trait Group:
         }
         *self = res
     }
+
+    fn mul_by_cofactor(&self) -> Self;
 }
