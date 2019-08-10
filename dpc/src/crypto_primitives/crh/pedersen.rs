@@ -84,6 +84,10 @@ fn group_hash<G: Group>(tag: &[u8], personalization: &[u8]) -> Option<G> {
     assert!(h.as_ref().len() == 32);
 
     println!("hash: {:?}", h.as_ref());
+
+    // G::read reads x and y
+    // edwards::Point::read in sapling-crypto reads y and constructs x from it
+    // This is why the following read fails.
     let res = G::read(h.as_ref());
     println!("read res: {:?}", &res);
 
