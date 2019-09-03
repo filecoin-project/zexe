@@ -41,7 +41,7 @@ impl<E: PairingEngine, C: Circuit<E>, V: ToEngineFr<E> + ?Sized> NIZK for Groth1
         ),
         Error,
     > {
-        let nizk_time = timer_start!(|| "{Groth-Maller 2017}::Setup");
+        let nizk_time = timer_start!(|| "{Groth 2016}::Setup");
         let pp = generate_random_parameters::<E, Self::Circuit, R>(circuit, rng)?;
         let vk = prepare_verifying_key(&pp.vk);
         timer_end!(nizk_time);
@@ -53,7 +53,7 @@ impl<E: PairingEngine, C: Circuit<E>, V: ToEngineFr<E> + ?Sized> NIZK for Groth1
         input_and_witness: Self::AssignedCircuit,
         rng: &mut R,
     ) -> Result<Self::Proof, Error> {
-        let proof_time = timer_start!(|| "{Groth-Maller 2017}::Prove");
+        let proof_time = timer_start!(|| "{Groth 2016}::Prove");
         let result = create_random_proof::<E, _, _, _>(input_and_witness, pp, rng)?;
         timer_end!(proof_time);
         Ok(result)
@@ -64,7 +64,7 @@ impl<E: PairingEngine, C: Circuit<E>, V: ToEngineFr<E> + ?Sized> NIZK for Groth1
         input: &Self::VerifierInput,
         proof: &Self::Proof,
     ) -> Result<bool, Error> {
-        let verify_time = timer_start!(|| "{Groth-Maller 2017}::Verify");
+        let verify_time = timer_start!(|| "{Groth 2016}::Verify");
         let conversion_time = timer_start!(|| "Convert input to E::Fr");
         let input = input.to_engine_fr()?;
         timer_end!(conversion_time);

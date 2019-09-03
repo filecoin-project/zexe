@@ -1,4 +1,5 @@
-use crate::{crypto_primitives::nizk::groth16::Groth16, gadgets::verifier::NIZKVerifierGadget};
+use crate::{crypto_primitives::nizk::groth16::Groth16, gadgets::verifier::NIZKVerifierGadget,
+    gadgets::verifier::NIZKBatchVerifierGadget};
 use algebra::{utils::ToEngineFr, AffineCurve, PairingEngine};
 use snark::{
     groth16::{Proof, VerifyingKey},
@@ -193,6 +194,99 @@ where
 
         let one = P::GTGadget::one(cs.ns(|| "GT One"))?;
         test.enforce_equal(cs.ns(|| "Test 1"), &one)?;
+
+        Ok(())
+    }
+}
+
+impl<PairingE, ConstraintE, P> NIZKBatchVerifierGadget<ConstraintE>
+    for Groth16VerifierGadget<PairingE, ConstraintE, P>
+where
+    PairingE: PairingEngine,
+    ConstraintE: PairingEngine,
+    P: PairingGadget<PairingE, ConstraintE>,
+{
+    type VerificationKeyGadget = VerifyingKeyGadget<PairingE, ConstraintE, P>;
+    type ProofGadget = ProofGadget<PairingE, ConstraintE, P>;
+
+    fn check_batch_verify<'a, CS, I, T>(
+        mut cs: CS,
+        vk: &Self::VerificationKeyGadget,
+        public_inputs: &mut [I],
+        proofs: &[Self::ProofGadget],
+    ) -> Result<(), SynthesisError>
+        where
+            CS: ConstraintSystem<ConstraintE>,
+            I: Iterator<Item = &'a T>,
+            T: 'a + ToBitsGadget<ConstraintE> + ?Sized,
+    {
+
+        assert_eq!(public_inputs.len(), proofs.len(), "Public inputs and proofs must be of the same length");
+
+        // create PreparedVerifyingKeyGadget
+        let pvk = vk.prepare(&mut cs.ns(|| "Prepare vk"))?;
+
+
+        for (i, (public_input, proof)) in public_inputs
+            .into_iter()
+            .zip(proofs.into_iter())
+            .enumerate() {
+            // A * B + inputs * (-gamma) + C * (-delta) = alpha * beta
+            // where input  = \sum_{i=0}^l input_i pvk.ic[i]
+
+            // TODO: rename to inputs
+            let g_psi = {
+                let mut cs = cs.ns(|| format!("Process input {}", i));
+                let mut g_psi = pvk.ic[0].clone();
+                let mut input_len = 1;
+                for (j, (input, b)) in public_input
+                    .zip(pvk.ic.iter().skip(1))
+                    .enumerate()
+                    {
+                        let input_bits = input.to_bits(cs.ns(|| format!("Input {} {}", i, j)))?;
+                        g_psi = b.mul_bits(cs.ns(|| format!("Mul {} {}", i, j)), &g_psi, input_bits.iter())?;
+                        input_len += 1;
+                    }
+                // Check that the input and the query in the verification are of the
+                // same length.
+                assert!(input_len == pvk.ic.len() && public_input.next().is_none());
+                g_psi
+            };
+
+            let test1_exp = {
+                let a_prep = P::prepare_g1(cs.ns(|| format!("A prep {}", i)), &proof.a)?;
+                let b_prep = P::prepare_g2(cs.ns(|| format!("B prep {}", i)), &proof.b)?;
+                let neg_c = proof.c.clone().negate(cs.ns(|| format!("neg C {}", i)))?;
+                let neg_c_prep = P::prepare_g1(cs.ns(|| format!("C prep {}", i)), &neg_c)?;
+
+                let neg_psi = g_psi.clone().negate(cs.ns(|| format!("neg inputs {}", i)))?;
+                let neg_psi_prep = P::prepare_g1(cs.ns(|| format!("inputs prep {}", i)), &neg_psi)?;
+
+                let neg_alpha = pvk.alpha_g1.clone().negate(cs.ns(|| format!("neg alpha {}", i)))?;
+                let neg_alpha_prep = P::prepare_g1(cs.ns(|| format!("neg alpha prep {}", i)), &neg_alpha)?;
+
+                P::miller_loop(
+                    cs.ns(|| format!("Miller loop {}", i)),
+                    &[
+                        a_prep,         // done
+                        neg_psi_prep,   // done
+                        neg_c_prep,     // done
+                        neg_alpha_prep, // done
+                    ],
+                    &[
+                        b_prep,                  // done
+                        pvk.gamma_g2_pc.clone(), // done
+                        pvk.delta_g2_pc.clone(), // done
+                        pvk.beta_g2_pc.clone(),  // done
+                    ],
+                )?
+            };
+
+            let test = P::final_exponentiation(cs.ns(|| format!("Final Exp 1 {}", i)), &test1_exp).unwrap();
+
+            let one = P::GTGadget::one(cs.ns(|| format!("GT One {}", i)))?;
+            test.enforce_equal(cs.ns(|| format!("Test 1 {}", i)), &one)?;
+        }
 
         Ok(())
     }
@@ -556,6 +650,114 @@ mod test {
             }
 
             // cs.print_named_objects();
+            assert!(cs.is_satisfied());
+        }
+    }
+
+    #[test]
+    fn groth16_batch_verifier_test() {
+        let num_inputs = 4;
+        let rng = &mut thread_rng();
+
+        let params = {
+            let c = Bench::<Bls12_377> {
+                inputs:          vec![None; num_inputs],
+                num_constraints: num_inputs,
+            };
+
+            generate_random_parameters(c, rng).unwrap()
+        };
+
+        let mut test_proofs  = Vec::new();
+        let mut proof_instances = Vec::new();
+
+        for _ in 0..2 {
+            let mut inputs: Vec<Option<Fr>> = Vec::with_capacity(num_inputs);
+            for _ in 0..num_inputs {
+                inputs.push(Some(rng.gen()));
+            }
+
+            let proof = {
+                // Create an instance of our circuit (with the
+                // witness)
+                let c = Bench {
+                    inputs:          inputs.clone(),
+                    num_constraints: num_inputs,
+                };
+                // Create a groth16 proof with our parameters.
+                create_random_proof(c, &params, rng).unwrap()
+            };
+
+            // map options to successful values
+            let inputs: Vec<_> = inputs.into_iter().flatten().collect();
+
+            test_proofs.push((proof, inputs));
+        }
+
+        for (j, (p, _i)) in test_proofs.iter().enumerate() {
+            proof_instances.push(ProofInstance {
+                proof: p.clone(),
+                public_input: &test_proofs[j].1,
+            });
+        }
+
+        let mut cs = TestConstraintSystem::<SW6>::new();
+
+        {
+
+            let mut multi_input_gadgets = Vec::new();
+            for (j, pi) in proof_instances.iter().enumerate() {
+                let mut input_gadgets = Vec::new();
+
+                let mut cs = cs.ns(|| format!("Allocate public input parameters {}", j));
+                for (i, input) in pi.public_input.iter().enumerate() {
+                    let mut input_bits = BitIterator::new(input.into_repr()).collect::<Vec<_>>();
+                    // Input must be in little-endian, but BitIterator outputs in big-endian.
+                    input_bits.reverse();
+
+                    let input_bits =
+                        Vec::<Boolean>::alloc_input(cs.ns(|| format!("Alloc input: {}", i)), || {
+                            Ok(input_bits)
+                        }).unwrap();
+
+                    input_gadgets.push(input_bits);
+                }
+
+                multi_input_gadgets.push(input_gadgets)
+            }
+
+            let mut proof_gadgets = Vec::new();
+            for (i, pi) in proof_instances.iter().enumerate() {
+                let proof_gadget = TestProofGadget::alloc(cs.ns(|| format!("Alloc Proof Gadget: {}", i)), || {
+                    Ok(pi.proof.clone())
+                }).unwrap();
+                proof_gadgets.push(proof_gadget);
+            }
+
+            let vk_gadget = TestVkGadget::alloc_input(cs.ns(|| "Vk"), || Ok(&params.vk)).unwrap();
+
+            let mut inputs_batch_iter: Vec<_> =
+                multi_input_gadgets.iter().map(|x| x.iter()).collect();
+
+            <TestVerifierGadget as NIZKBatchVerifierGadget<SW6>>::check_batch_verify(cs.ns(|| "Verify"),
+                                                     &vk_gadget,
+                                                     &mut inputs_batch_iter,
+                                                     &proof_gadgets,
+            ).unwrap();
+
+            println!(
+                "Constraints after Verfier Gadget {:?}, for {:?} inputs ",
+                cs.num_constraints(),
+                num_inputs
+            );
+
+            if !cs.is_satisfied() {
+                println!("=========================================================");
+                println!("Unsatisfied constraints:");
+                println!("{:?}", cs.which_is_unsatisfied().unwrap());
+                println!("=========================================================");
+            }
+
             assert!(cs.is_satisfied());
         }
     }
